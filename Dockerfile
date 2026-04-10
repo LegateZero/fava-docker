@@ -8,4 +8,4 @@ RUN git clone -b main https://github.com/beancount/fava.git fava
 
 WORKDIR /tmp/fava
 
-RUN npm run build
+RUN make
