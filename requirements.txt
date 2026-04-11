@@ -1,0 +1,7 @@
+fava-plugins==1.2
+beanprice @ git+https://github.com/beancount/beanprice.git
+fava-portfolio-returns==2.5.1
+fava-dashboards==2.0.0b7
+fava-investor==1.0.1
+fava-budget-freedom @ git+https://github.com/Leon2xiaowu/fava_budget_freedom.git
+fava-currency-tracker @ git+https://github.com/Evernight/fava-currency-tracker.git

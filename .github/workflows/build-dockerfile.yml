@@ -20,6 +20,6 @@ jobs:
           file: ./Dockerfile
           push: false
           load: true
-          tags: local/test-image:latest
+          tags: h/test-image:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
