@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!requirements.txt
+!vendor/
+!vendor/**
+vendor/**/.github
+vendor/**/.gitignore
+vendor/**/.gitattributes

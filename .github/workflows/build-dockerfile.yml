@@ -2,6 +2,23 @@ name: Build Dockerfile
 
 on:
   workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Image version tag
+        required: false
+        default: latest
+      additional_tags:
+        description: Space-separated extra tags
+        required: false
+        default: ""
+      push_image:
+        description: Push image to Harbor
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   build-dockerfile:
@@ -13,13 +30,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image with layer cache
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          load: true
-          tags: h/test-image:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and optionally push image
+        shell: bash
+        env:
+          DOCKER_BUILDKIT: "1"
+          HARBOR_REGISTRY: ${{ secrets.HARBOR_REGISTRY }}
+          HARBOR_PROJECT: ${{ vars.HARBOR_PROJECT }}
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: beancount-container
+          VERSION_TAG: ${{ inputs.version_tag }}
+          ADDITIONAL_TAGS: ${{ inputs.additional_tags }}
+          PUSH_IMAGE: ${{ inputs.push_image }}
+        run: bash ./scripts/build-and-push.sh

@@ -1,49 +1,80 @@
-FROM node:25.9.0-bookworm AS build
+# syntax=docker/dockerfile:1.7
 
-ARG FAVA_VERSION=v1.30.12
-ARG BEANCOUNT_VERSION=3.2.0
+ARG DEBIAN_SUITE=bookworm
+ARG NODE_VERSION=25.9.0
+ARG PYTHON_VERSION=3.13.13
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
 
-WORKDIR /tmp
-RUN git clone https://github.com/beancount/fava.git fava
+FROM node:${NODE_VERSION}-${DEBIAN_SUITE} AS frontend-build
 
-WORKDIR /tmp/fava
+WORKDIR /src
 
-RUN apt update && apt install python3-babel -y
-RUN git checkout ${FAVA_VERSION}
-RUN make all
-RUN make mostlyclean
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update \
+ && apt-get install -y --no-install-recommends make python3-babel \
+ && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /tmp
-RUN git clone -b main https://github.com/Evernight/fava-git.git fava-git
-WORKDIR /tmp/fava-git/frontend
-RUN  npm install && npm run build
+COPY vendor/fava/ /src/fava/
+COPY vendor/fava-git/ /src/fava-git/
 
-FROM python:3.13.13-bookworm AS build_bc
+WORKDIR /src/fava
+RUN make all \
+ && make mostlyclean
 
-COPY --from=build /tmp/fava /tmp/fava
-COPY --from=build /tmp/fava-git /tmp/fava-git
+WORKDIR /src/fava-git/frontend
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f package-lock.json ]; then npm ci; else npm install; fi \
+ && npm run build
 
-ENV PATH="/app/bin:${PATH}"
-RUN python3 -m venv /app
-RUN /app/bin/pip install --no-cache-dir -U /tmp/fava
-RUN /app/bin/pip install --no-cache-dir -U /tmp/fava-git
+FROM python:${PYTHON_VERSION}-${DEBIAN_SUITE} AS python-build
 
-WORKDIR /tmp
-RUN git clone https://github.com/beancount/beancount.git beancount
-WORKDIR /tmp/beancount
-RUN /app/bin/pip install --no-cache-dir -U .
+ENV VIRTUAL_ENV=/app \
+    PATH="/app/bin:${PATH}" \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /
-COPY requirements.txt requirements.txt
-RUN /app/bin/pip install -r requirements.txt
+RUN python -m venv "${VIRTUAL_ENV}" \
+ && pip install --upgrade pip setuptools wheel
 
-RUN find /app -type d -name __pycache__ -prune -exec rm -rf {} + \
- && find /app -type f -name '*.pyc' -delete
+COPY --from=frontend-build /src/fava/ /tmp/fava/
+COPY --from=frontend-build /src/fava-git/ /tmp/fava-git/
+COPY vendor/beancount/ /tmp/beancount/
+COPY vendor/beanprice/ /tmp/beanprice/
+COPY vendor/fava-budget-freedom/ /tmp/fava-budget-freedom/
+COPY vendor/fava-currency-tracker/ /tmp/fava-currency-tracker/
+COPY requirements.txt /tmp/requirements.txt
 
-FROM python:3.13.13-slim-bookworm
-COPY --from=build_bc /app /app
-ENV PATH="/app/bin:${PATH}"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
+        /tmp/beancount \
+        /tmp/fava \
+        /tmp/fava-git \
+        /tmp/beanprice \
+        /tmp/fava-budget-freedom \
+        /tmp/fava-currency-tracker \
+ && pip install -r /tmp/requirements.txt \
+ && find "${VIRTUAL_ENV}" -type d -name __pycache__ -prune -exec rm -rf {} + \
+ && find "${VIRTUAL_ENV}" -type f -name '*.pyc' -delete
 
-ENV BEANCOUNT_FILE=""
-ENV BEANCOUNT_HOST="0.0.0.0"
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_SUITE} AS runtime
+
+ARG VERSION
+ARG VCS_REF
+ARG BUILD_DATE
+
+LABEL org.opencontainers.image.title="beancount-container" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV VIRTUAL_ENV=/app \
+    PATH="/app/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    BEANCOUNT_FILE="" \
+    BEANCOUNT_HOST="0.0.0.0"
+
+COPY --from=python-build /app/ /app/
+
+EXPOSE 5000
 CMD ["fava"]
